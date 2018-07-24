@@ -2,7 +2,15 @@
 
 var scene = 1;
 var fonts = {// Pre-loaded fonts for faster execution in draw() loop.
-    fdefault: loadFont("Airal", 25),
+    default: loadFont("Airal", 25),
+    monospace: loadFont("monospace", 18),
+    addPlayersFont: loadFont("Airal Bold", 30),
+    winScreenHuge: loadFont("Airal", 50),
+    winScreenBig: loadFont("Airal", 40),
+    winScreenSmall: loadFont("Airal Bold", 20),
+    tutorialSmall: loadFont("Airal", 20),
+    tutorialBig: loadFont("Airal", 30),
+    tutorialQuestionMark: loadFont("monospace Bold", 35),
 };
 var cam = {// Camera variables
     ht : 0.001,// ht = height, the number of pixels high the camera is from the ground
@@ -20,6 +28,7 @@ var cam = {// Camera variables
 
 /** Tools (functions) **/
 var X = function(cor){// Calculate on-screen position based on camera variables (x, y, height)
+// Took me many hours to figure this out myself (I didn't look up any formulas), I refined these functions in Python many times and converted it to JS.
     return (cor-cam.x)/cam.ht+cam.hw;
 };
 var Y = function(cor){
@@ -66,5 +75,4 @@ var CameraUpdate = function() {
         cam.ht -= (cam.ht-cam.gotoHt)*0.4;
     }else{cam.ht = cam.gotoHt;}
 };
-
 
