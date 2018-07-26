@@ -1,6 +1,9 @@
+/** Initialize PJS **/
+noStroke();
+textAlign(CENTER, CENTER);
 
-
-var scene = 1;
+/** Variables **/
+var scene = 0;
 var fonts = {// Pre-loaded fonts for faster execution in draw() loop.
     fdefault: loadFont("Airal", 25),
 };
@@ -16,6 +19,7 @@ var cam = {// Camera variables
     hw: width/2,// hw = half width of canvas
     hh: height/2,// hh = half height of canvas
 };
+var vMap = [];// tile map in view
 
 
 /** Tools (functions) **/
@@ -52,13 +56,13 @@ var CameraUpdate = function() {
         cam.dragForceY *= 0.7;
     }
 
-    /* UP/DOWN arrow key zoom logic */
+    /* UP/DOWN arrow key zoom logic *//*
     if (keys[UP] && cam.gotoHt > cam.minHt) {
         cam.gotoHt *= 0.95;
     } else if (keys[DOWN] && cam.gotoHt < cam.maxHt) {
         cam.gotoHt /= 0.95;
     }
-
+*/
     /* Smooth zoom logic */
     if(cam.ht < cam.gotoHt/1.01){
         cam.ht += (cam.gotoHt-cam.ht)*0.4;
@@ -68,3 +72,20 @@ var CameraUpdate = function() {
 };
 
 
+
+
+draw = function() {
+    switch (scene) {
+        case 0: // main game
+            background(255);
+            
+            break;
+        
+        case 1:
+            
+            break;
+            
+        default:
+            println("Scene "+scene+" does not exist!");
+    }
+};
