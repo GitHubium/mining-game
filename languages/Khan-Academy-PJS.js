@@ -7,7 +7,11 @@ rectMode(LEFT);
 imageMode(CENTER);
 
 /** Variables **/
-var vMap;
+var BigBlock;
+var tMap;// stands for "tile map"
+var bMap;// stands for "block map", contains indices that point to blocks. This variable is used to determine which blocks to draw without checking if every block is on-screen
+var toBeRecycledBMapIndices = [];// if block[i].length===0, put i in this array (to be used by bMap if particle appears)
+var blocks = [null,];// array of arrays of blocks and particles
 var scene = 0;
 var down_keys = Object.create(null);
 var fonts = {// Pre-loaded fonts for faster execution in draw() loop.
@@ -26,8 +30,9 @@ var cam = {// Camera variables
     hh: height/2,// hh = half height of canvas
 };
 var uint8=(function(){return this.Uint8Array;})();///
-var vMapColumns = 40;
-var vMapRows = 40;
+var uint16=(function(){return this.Uint16Array;})();///
+var mapColumns = 40;
+var mapRows = 40;
 
 
 var mapKeyColors = [
@@ -108,10 +113,10 @@ var collidelib = {
         var roundedX = round(playerObj.centerX);
         var roundedY = round(playerObj.centerY);// rounded coors are also the BR block coors
         
-        var blockTL = vMap[(roundedX-1)+vMapColumns*(roundedY-1)];// top-left block
-        var blockTR = vMap[(roundedX)+vMapColumns*(roundedY-1)];// top-right block
-        var blockBL = vMap[(roundedX-1)+vMapColumns*(roundedY)];// bottom-left block
-        var blockBR = vMap[(roundedX)+vMapColumns*(roundedY)];// bottom-right block
+        var blockTL = tMap[(roundedX-1)+mapColumns*(roundedY-1)];// top-left block
+        var blockTR = tMap[(roundedX)+mapColumns*(roundedY-1)];// top-right block
+        var blockBL = tMap[(roundedX-1)+mapColumns*(roundedY)];// bottom-left block
+        var blockBR = tMap[(roundedX)+mapColumns*(roundedY)];// bottom-right block
         var _isFalling = true;
         
         if (blockTL) {// if top-left block is solid
@@ -173,8 +178,8 @@ var collidelib = {
         }
         
         if (_isFalling) {
-            var blockBBL = vMap[(roundedX-1)+vMapColumns*(roundedY)];// below-left block
-            var blockBBR = vMap[(roundedX)+vMapColumns*(roundedY)];// below-right block
+            var blockBBL = tMap[(roundedX-1)+mapColumns*(roundedY)];// below-left block
+            var blockBBR = tMap[(roundedX)+mapColumns*(roundedY)];// below-right block
             
             if (!blockBBL) {
                 if (!blockBBR) {// both sides are empty
@@ -198,17 +203,18 @@ var collidelib = {
 
 var generateMap = function() {
     
-    var array = [];
-    for (var i = 0; i < vMapRows*vMapColumns; i ++) {
+    var tArray = [];
+    var bArray = [];
+    for (var i = 0; i < mapRows*mapColumns; i ++) {
         if (i%40===0 || i%40===39 || floor(i/40)===0 || floor(i/40)===39) {
-            array.push(floor(random(1,4.999)));
-            
+            tArray.push(floor(random(1,4.999)));
         } else {
-            array.push((random(0,1) > 0.5) ? 0 : floor(random(1,4.999)));
+            tArray.push((random(0,1) > 0.5) ? 0 : floor(random(1,4.999)));
         }
+        bArray.push(0);
     }
-    vMap = uint8.from(array);
-
+    tMap = uint8.from(tArray);
+    bMap = uint16.from(bArray);
     
 
    
@@ -218,42 +224,42 @@ var generateMap = function() {
 
 var mapConnectionsScan = function() {
     var tempArray = [];
-    for (var i = 0; i < vMap.length; i ++) {
+    for (var i = 0; i < tMap.length; i ++) {
         tempArray.push(false);
     }
     var infectedMap = uint8.from(tempArray);
     
-    infectedMap[vMap.length-1] = 1;
-    var endpoints = [vMap.length-1];
+    infectedMap[tMap.length-1] = 1;
+    var endpoints = [tMap.length-1];
 
     var maxTimes = 200;
     var times = 0;
     while (endpoints.length !== 0) {// infect solid tiles
         for (var i = endpoints.length-1; i >= 0; i --) {
-            if (endpoints[i]%vMapColumns !== 0) {
+            if (endpoints[i]%mapColumns !== 0) {
                 var indexLeft = endpoints[i]-1;
-                if (vMap[indexLeft] && !infectedMap[indexLeft]) {
+                if (tMap[indexLeft] && !infectedMap[indexLeft]) {
                     infectedMap[indexLeft] = true;
                     endpoints.push(indexLeft);
                 }
     
-            } if (endpoints[i]%vMapColumns !== vMapColumns-1) {
+            } if (endpoints[i]%mapColumns !== mapColumns-1) {
                 var indexRight = endpoints[i]+1;
-                if (vMap[indexRight] && !infectedMap[indexRight]) {
+                if (tMap[indexRight] && !infectedMap[indexRight]) {
                     infectedMap[indexRight] = true;
                     endpoints.push(indexRight);
                 }
             }
-            if (endpoints[i] >= vMapColumns) {
-                var indexUp = endpoints[i]-vMapColumns;
-                if (vMap[indexUp] && !infectedMap[indexUp]) {
+            if (endpoints[i] >= mapColumns) {
+                var indexUp = endpoints[i]-mapColumns;
+                if (tMap[indexUp] && !infectedMap[indexUp]) {
                     infectedMap[indexUp] = true;
                     endpoints.push(indexUp);
                 }
             } 
-            if (endpoints[i] < vMap.length-vMapColumns) {
-                var indexDown = endpoints[i]+vMapColumns;
-                if (vMap[indexDown] && !infectedMap[indexDown]) {
+            if (endpoints[i] < tMap.length-mapColumns) {
+                var indexDown = endpoints[i]+mapColumns;
+                if (tMap[indexDown] && !infectedMap[indexDown]) {
                     infectedMap[indexDown] = true;
                     endpoints.push(indexDown);
                 }
@@ -269,10 +275,21 @@ var mapConnectionsScan = function() {
     }
     //non-infected tiles turned into particles
     
-    for (var i = 0; i < vMap.length; i ++) {
-        if (vMap[i]) {
+    var bMapOnIndex = blocks.length;
+    for (var i = 0; i < tMap.length; i ++) {
+        if (tMap[i]) {
             if (!infectedMap[i]) {
-                vMap[i] = 0;
+                
+                bMap[i] = bMapOnIndex;
+                blocks.push( [new BigBlock(i%mapColumns, floor(i/mapColumns), tMap[i], i, bMapOnIndex, 0)] );
+                //                                                                id256, bMapIndex, blockIndex, blockIndexIndex
+                
+                
+                tMap[i] = 0;
+                bMapOnIndex ++;
+            } else {
+
+                
             }
             
         }
@@ -284,13 +301,29 @@ var mapConnectionsScan = function() {
 };
 
 var drawTiles = function() {
-    var ts = cam.hw/cam.ht;
-    for (var layer = max(0, floor(RevY(0))); layer < min(floor(RevY(height))+1, vMapRows); layer ++) {
-        for (var col = max(0, floor(RevX(0))); col < min(floor(RevX(width ))+1, vMapColumns); col ++) {
-            fill(mapKeyColors[vMap[layer*vMapColumns+col]]);
+    for (var layer = max(0, floor(RevY(0))); layer < min(floor(RevY(height))+1, mapRows); layer ++) {
+        for (var col = max(0, floor(RevX(0))); col < min(floor(RevX(width ))+1, mapColumns); col ++) {
+            fill(mapKeyColors[tMap[layer*mapColumns+col]]);
             rect(X(col), Y(layer), S(1)+0.5, S(1)+0.5);
         }
     }
+    
+};
+
+var drawBlocks = function() {
+    for (var layer = max(0, floor(RevY(0))); layer < min(floor(RevY(height))+1, mapRows); layer ++) {
+        for (var col = max(0, floor(RevX(0))); col < min(floor(RevX(width ))+1, mapColumns); col ++) {
+            var id65536 = bMap[layer*mapColumns+col];
+            
+            if (id65536 !== 0) {
+
+                for (var bi = 0; bi < blocks[id65536].length; bi ++) {
+                    blocks[id65536][bi].update();
+                }
+            }
+        }
+    }
+    
     
 };
 
@@ -495,17 +528,81 @@ var Player = function(x, y, w, h) {
     
 };
 
-var BigBlock = function(x, y, id256) {
+var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, velX, velY) {// velX and velY are optional parameters
+
     this.x1 = x;
     this.y1 = y;
     this.w = 1;
     this.h = 1;
+    this.velX = (velX === undefined) ? 0 : velX;
+    this.velY = (velY === undefined) ? 0 : velY;
     this.x2 = x+this.w;
     this.y2 = y+this.h;
+    this.centerX = x+this.w/2;
+    this.centerY = y+this.w/2;
+    this.inRow = floor(this.centerX);
+    this.inColumn = floor(this.centerY);
     this.id256 = id256;
+    this.bMapIndex = bMapIndex;// set bMap[this.bMapIndex] = 0 when if you are the last block in blocks[blockIndex]
+    this.blockIndex = blockIndex;// index in blocks
+    this.blockIndexIndex = blockIndexIndex;// index in blocks[this.blockIndex]. This number changes if lower index is removed
+    this.clockC = 0;
+    this.clockM = 10;
+    
+    this.configXs = function() {
+        this.centerX = this.x1 + this.w/2;
+        this.x2 = this.x1 + this.w;        
+    };
+    
+    this.configYs = function() {
+        this.centerY = this.y1 + this.h/2;
+        this.y2 = this.y1 + this.h;
+    };
+    
+
     
     this.update = function() {
+        this.x1 += this.velX;
+        this.y1 += this.velY;
+        this.velY = (this.velY < maxGravityOnObject) ? this.velY + gravity : maxGravityOnObject;
+        this.configXs();
+        this.configYs();
         
+        this.clockC ++;
+        if (this.clockC >= this.clockM) {
+            this.clockC = 0;
+            
+            var changed = false;
+            if (floor(this.centerX) !== this.inRow) {
+                if (floor(this.centerY) !== this.inColumn) {
+                    this.inColumn = floor(this.centerY);
+                }
+                this.inRow = floor(this.centerX);
+                changed = true;
+            } else if (floor(this.y1) !== this.inColumn) {
+                this.inColumn = floor(this.centerY);
+                changed = true;
+            }
+            
+            if (changed) {
+                /* Remove from blocks */
+                for (var bii = this.blockIndexIndex+1; bii < blocks[this.blockIndex].length; bii ++) {
+                    blocks[this.blockIndex][bii].blockIndexIndex --;// push backwards index
+                }
+                blocks[this.blockIndex].splice(this.blockIndexIndex, 1);//remove from blocks
+                
+                /* Remove from bMap (if you're the last of blocks[this.blockIndex]) */
+                if (blocks[this.blockIndex].length === 0) {
+                    bMap[this.bMapIndex] = 0;
+                    ///wii hmm
+                }
+            }
+            
+        }
+        
+        
+        
+        this.draw();///temporary
     };
     
     this.draw = function() {
@@ -517,7 +614,7 @@ var BigBlock = function(x, y, id256) {
 
 /** Create instances **/
 var framework = new Framework();
-var player = new Player(vMapRows/2, vMapColumns/2, 0.2, 0.2);
+var player = new Player(mapRows/2, mapColumns/2, 0.2, 0.2);
 generateMap();
 
 mapConnectionsScan();
@@ -573,6 +670,7 @@ draw = function() {
             background(255);
             
             drawTiles();
+            drawBlocks();
             
             player.update();
             
