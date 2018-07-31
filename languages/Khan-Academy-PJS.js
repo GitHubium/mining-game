@@ -32,7 +32,7 @@ var cam = {// Camera variables
 var uint8=(function(){return this.Uint8Array;})();///
 var uint16=(function(){return this.Uint16Array;})();///
 var mapColumns = 40;
-var mapRows = 40;
+var mapRows = 100;
 
 
 var mapKeyColors = [
@@ -44,8 +44,12 @@ var mapKeyColors = [
     color(219, 219, 219),// white
     ];
     
-var gravity = 0.008;/// maybe turn into physics.gravity
-var maxGravityOnObject = 0.4; // maximum fall speed of an object, because of "air friction"
+var physics = {
+    gravity : 0.008,/// maybe turn into physics.physics.gravity
+    maxGravityOnObject : 0.4, // maximum fall speed of an object, because of "air friction"
+    bigBlockXVelocity : 0.1, // X-velocity of falling BigBlocks
+
+};
 
 /** The key:
  * 
@@ -109,7 +113,6 @@ var cameraUpdate = function() {
 
 var collidelib = {
     player_to_map:function(playerObj) {// check 4 nearest blocks for collisions
-    
         var roundedX = round(playerObj.centerX);
         var roundedY = round(playerObj.centerY);// rounded coors are also the BR block coors
         
@@ -118,7 +121,7 @@ var collidelib = {
         var blockBL = tMap[(roundedX-1)+mapColumns*(roundedY)];// bottom-left block
         var blockBR = tMap[(roundedX)+mapColumns*(roundedY)];// bottom-right block
         var _isFalling = true;
-        
+        /**
         if (blockTL) {// if top-left block is solid
             if (playerObj.x1 < roundedX && playerObj.y1 < roundedY) {
                 if (abs(playerObj.x1-(roundedX-0.5)) > abs(playerObj.y1-(roundedY-0.5))) {
@@ -175,27 +178,148 @@ var collidelib = {
                     playerObj.isFalling = false;
                 }        
             }
-        }
-        
-        if (_isFalling) {
-            var blockBBL = tMap[(roundedX-1)+mapColumns*(roundedY)];// below-left block
-            var blockBBR = tMap[(roundedX)+mapColumns*(roundedY)];// below-right block
-            
-            if (!blockBBL) {
-                if (!blockBBR) {// both sides are empty
-                    playerObj.isFalling = true;
-                } else if (playerObj.x2 <= roundedX) {
-                    playerObj.isFalling = true;
+        }**/
+        if (blockTL) {// if top-left block is solid
+            if (playerObj.x1 < roundedX && playerObj.y1 < roundedY) {
+                if (playerObj.x1-(roundedX-0.5) > playerObj.y1-(roundedY-0.5)) {
+                    playerObj.velX = 0;
+                    playerObj.x1 = roundedX;
+                    playerObj.configXs();
                 }
-            } else {
-                if (playerObj.x1 >= roundedX) {
-                    playerObj.isFalling = true;
+                else {
+                    playerObj.velY = 0;
+                    playerObj.y1 = roundedY;
+                    playerObj.configYs();
                 }
             }
         }
+        if (blockTR) {// if top-right block is solid
+            if (playerObj.y1 < roundedY && playerObj.x2 > roundedX) {
+                if ((roundedX+0.5)-playerObj.x2 > playerObj.y1-(roundedY-0.5)) {
+                    playerObj.velX = 0;
+                    playerObj.x1 = roundedX-playerObj.w;
+                    playerObj.configXs();
+                } else  {
+                    playerObj.velY = 0;
+                    playerObj.y1 = roundedY;
+                    playerObj.configYs();
+                }
+            }
+        }
+        if (blockBL) {// if bottom-left block is solid
+            if (playerObj.x1 < roundedX && playerObj.y2 > roundedY) {
+                if (playerObj.x1-(roundedX-0.5) > (roundedY+0.5)-playerObj.y2) { 
+                    playerObj.velX = 0;
+                    playerObj.x1 = roundedX;
+                    playerObj.configXs();
+                } else {
+                    playerObj.velY = 0;
+                    playerObj.y1 = roundedY-playerObj.h;
+                    playerObj.configYs();
+                    _isFalling = false;
+                    playerObj.isFalling = false;
+                }
+            }            
+        }
+        if (blockBR) {// if bottom-right block is solid
+            if (playerObj.x2 > roundedX && playerObj.y2 > roundedY) {
+                if ((roundedX+0.5)-playerObj.x2 > (roundedY+0.5)-playerObj.y2) { 
+                    playerObj.velX = 0;
+                    playerObj.x1 = roundedX-playerObj.w;
+                    playerObj.configXs();
+                } else {
+                    playerObj.velY = 0;
+                    playerObj.y1 = roundedY-playerObj.h;
+                    playerObj.configYs();
+                    _isFalling = false;
+                    playerObj.isFalling = false;
+                }        
+            }
+        }
+        if (_isFalling) {
+            var blockBBX1 = tMap[floor(playerObj.x1)+mapColumns*(roundedY)];// below-left block
+            var blockBBX2 = tMap[floor(playerObj.x2)+mapColumns*(roundedY)];// below-right block
+            
+            if (!blockBBX1 && !blockBBX2) {
+                playerObj.isFalling = true;
+            }
+        }
+    },
+    
+    block_to_map:function(blockObj) {
+        var roundedX = round(blockObj.centerX);
+        var roundedY = round(blockObj.centerY);// rounded coors are also the BR block coors
 
-        
-    }
+        var blockTL = tMap[(roundedX-1)+mapColumns*(roundedY-1)];// top-left block
+        var blockTR = tMap[(roundedX)+mapColumns*(roundedY-1)];// top-right block
+        var blockBL = tMap[(roundedX-1)+mapColumns*(roundedY)];// bottom-left block
+        var blockBR = tMap[(roundedX)+mapColumns*(roundedY)];// bottom-right block
+        var _isFalling = true;
+         if (blockTL) {// if top-left block is solid
+            if (blockObj.x1 < roundedX && blockObj.y1 < roundedY) {
+                if (blockObj.x1-(roundedX-0.5) > blockObj.y1-(roundedY-0.5)) {
+                    blockObj.velX = 0;
+                    blockObj.x1 = roundedX;
+                    blockObj.configXs();
+                }
+                else {
+                    blockObj.velY = 0;
+                    blockObj.y1 = roundedY;
+                    blockObj.configYs();
+                }
+            }
+        }
+        if (blockTR) {// if top-right block is solid
+            if (blockObj.y1 < roundedY && blockObj.x2 > roundedX) {
+                if ((roundedX+0.5)-blockObj.x2 > blockObj.y1-(roundedY-0.5)) {
+                    blockObj.velX = 0;
+                    blockObj.x1 = roundedX-blockObj.w;
+                    blockObj.configXs();
+                } else  {
+                    blockObj.velY = 0;
+                    blockObj.y1 = roundedY;
+                    blockObj.configYs();
+                }
+            }
+        }
+        if (blockBL) {// if bottom-left block is solid
+            if (blockObj.x1 < roundedX && blockObj.y2 > roundedY) {
+                if (blockObj.x1-(roundedX-0.5) > (roundedY+0.5)-blockObj.y2) { 
+                    blockObj.velX = 0;
+                    blockObj.x1 = roundedX;
+                    blockObj.configXs();
+                } else {
+                    blockObj.velY = 0;
+                    blockObj.y1 = roundedY-blockObj.h;
+                    blockObj.configYs();
+                    _isFalling = false;
+                    blockObj.isFalling = false;
+                }
+            }            
+        }
+        if (blockBR) {// if bottom-right block is solid
+            if (blockObj.x2 > roundedX && blockObj.y2 > roundedY) {
+                if ((roundedX+0.5)-blockObj.x2 > (roundedY+0.5)-blockObj.y2) { 
+                    blockObj.velX = 0;
+                    blockObj.x1 = roundedX-blockObj.w;
+                    blockObj.configXs();
+                } else {
+                    blockObj.velY = 0;
+                    blockObj.y1 = roundedY-blockObj.h;
+                    blockObj.configYs();
+                    _isFalling = false;
+                    blockObj.isFalling = false;
+                }        
+            }
+        }        if (_isFalling) {
+            var blockBBX1 = tMap[floor(blockObj.x1)+mapColumns*roundedY];// below-left block
+            var blockBBX2 = tMap[floor(blockObj.x2)+mapColumns*roundedY];// below-right block
+            
+            if (!blockBBX1 && !blockBBX2) {
+                blockObj.isFalling = true;
+            }
+        }
+    },
     
     
     
@@ -206,10 +330,10 @@ var generateMap = function() {
     var tArray = [];
     var bArray = [];
     for (var i = 0; i < mapRows*mapColumns; i ++) {
-        if (i%40===0 || i%40===39 || floor(i/40)===0 || floor(i/40)===39) {
+        if (i%mapColumns===0 || i%mapColumns===mapColumns-1 || floor(i/mapColumns)===0 || floor(i/mapColumns)===mapRows-1) {
             tArray.push(floor(random(1,4.999)));
         } else {
-            tArray.push((random(0,1) > 0.5) ? 0 : floor(random(1,4.999)));
+            tArray.push((random(0,1) > 0.8) ? 0 : floor(random(1,4.999)));
         }
         bArray.push(0);
     }
@@ -281,7 +405,7 @@ var mapConnectionsScan = function() {
             if (!infectedMap[i]) {
                 
                 bMap[i] = bMapOnIndex;
-                blocks.push( [new BigBlock(i%mapColumns, floor(i/mapColumns), tMap[i], i, bMapOnIndex, 0)] );
+                blocks.push( [new BigBlock(i%mapColumns, floor(i/mapColumns), tMap[i], i, bMapOnIndex, 0, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity))] );
                 //                                                                id256, bMapIndex, blockIndex, blockIndexIndex
                 
                 
@@ -314,17 +438,13 @@ var drawBlocks = function() {
     for (var layer = max(0, floor(RevY(0))); layer < min(floor(RevY(height))+1, mapRows); layer ++) {
         for (var col = max(0, floor(RevX(0))); col < min(floor(RevX(width ))+1, mapColumns); col ++) {
             var id65536 = bMap[layer*mapColumns+col];
-            
             if (id65536 !== 0) {
-
                 for (var bi = 0; bi < blocks[id65536].length; bi ++) {
                     blocks[id65536][bi].update();
                 }
             }
         }
     }
-    
-    
 };
 
 /** Objects (classes) **/
@@ -424,8 +544,8 @@ var Framework = function() {
 var Player = function(x, y, w, h) {
     this.x1 = x;
     this.y1 = y;
-    this.w = w;
-    this.h = h;
+    this.w = w;// MUST BE LESS THAN (or ==) 0.5
+    this.h = h;// MUST BE LESS THAN (or ==) 0.5
     this.centerX = x + w/2;
     this.centerY = y + h/2;
     this.x2 = x + w;
@@ -435,11 +555,11 @@ var Player = function(x, y, w, h) {
     this.cameraTrackAheadAmount = 20;// how many frames ahead the camera predicts you will be *adjusted by camera height
     this.velX = 0;
     this.velY = 0;
-    this.speedX = 0.04;
-    this.speedY = 0.125;
+    this.speedX = 0.07;
+    this.speedY = 0.22;//0.135;
     this.isFalling = true;// if not touching block
     this.collisionPushBack = 0.1;// in a perfect world, it would be exactly 0, but this allows the player to go between walls in this program
-    this.avatar = getImage("creatures/OhNoes");
+    this.avatars = [getImage("creatures/OhNoes-Happy"), getImage("creatures/OhNoes-Hmm"), getImage("creatures/OhNoes"), ];// [normal_avatar, jumping_up_avatar, jumping_down_avatar];
     this.isFacingLeft = true;
     
     this.configXs = function() {
@@ -489,7 +609,7 @@ var Player = function(x, y, w, h) {
         if (this.isFalling) {
             this.y1 += this.velY;
             this.configYs();
-            this.velY = (this.velY < maxGravityOnObject) ? this.velY + gravity : maxGravityOnObject;
+            this.velY = (this.velY < physics.maxGravityOnObject) ? this.velY + physics.gravity : physics.maxGravityOnObject;
         }
         
         
@@ -498,44 +618,47 @@ var Player = function(x, y, w, h) {
         
 
         
-        /* Make camera follow player */
-        /*this.cameraFollowX = this.x+this.velX*this.cameraTrackAheadAmount;
-        this.cameraFollowY = this.y+this.velY*this.cameraTrackAheadAmount;
-        cam.x += (this.cameraFollowX-cam.x)*0.1;
-        cam.y += (this.cameraFollowY-cam.y)*0.1;*/
-        cam.x=this.centerX;cam.y=this.centerY;
+        /* Make camera follow player (looks much better if placed after graphics */
+
+        //cam.x=this.centerX;cam.y=this.centerY;
         
         /* Graphics */
         //fill(255, 0, 217);
         //rect(X(this.x1), Y(this.y1), S(this.w), S(this.h));
         
-        
+        var avatar = this.avatars[this.isFalling?this.velY>0?2:1:0];
         if (this.isFacingLeft) {
-            image(this.avatar, X(this.centerX), Y(this.centerY), S(this.w*1.3), S(this.h*1.3));
+            image(avatar, X(this.centerX), Y(this.centerY), S(this.w*1.3), S(this.h*1.3));
             if (this.velX < 0) {
                 this.isFacingLeft = false;
             }
         } else {
             translate(X(this.centerX), Y(this.centerY));
             scale(-1, 1);
-            image(this.avatar, 0, 0, S(this.w*1.3), S(this.h*1.3));
+            image(avatar, 0, 0, S(this.w*1.3), S(this.h*1.3));
             resetMatrix();
             if (this.velX > 0) {
                 this.isFacingLeft = true;
             }
         }
+        
+        
+        this.cameraFollowX = this.centerX+this.velX*this.cameraTrackAheadAmount;
+        this.cameraFollowY = this.centerY+this.velY*this.cameraTrackAheadAmount;
+        cam.x += (this.cameraFollowX-cam.x)*0.1;
+        cam.y += (this.cameraFollowY-cam.y)*0.1;
     };
     
 };
 
 var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, velX, velY) {// velX and velY are optional parameters
-
     this.x1 = x;
     this.y1 = y;
     this.w = 1;
     this.h = 1;
     this.velX = (velX === undefined) ? 0 : velX;
     this.velY = (velY === undefined) ? 0 : velY;
+    this.isFalling = true;
     this.x2 = x+this.w;
     this.y2 = y+this.h;
     this.centerX = x+this.w/2;
@@ -546,8 +669,6 @@ var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, vel
     this.bMapIndex = bMapIndex;// set bMap[this.bMapIndex] = 0 when if you are the last block in blocks[blockIndex]
     this.blockIndex = blockIndex;// index in blocks
     this.blockIndexIndex = blockIndexIndex;// index in blocks[this.blockIndex]. This number changes if lower index is removed
-    this.clockC = 0;
-    this.clockM = 10;
     
     this.configXs = function() {
         this.centerX = this.x1 + this.w/2;
@@ -559,19 +680,25 @@ var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, vel
         this.y2 = this.y1 + this.h;
     };
     
+    
+    this.logicFalling = function() {
+        
+    };
 
     
     this.update = function() {
         this.x1 += this.velX;
-        this.y1 += this.velY;
-        this.velY = (this.velY < maxGravityOnObject) ? this.velY + gravity : maxGravityOnObject;
         this.configXs();
-        this.configYs();
+        if (this.isFalling) {
+            this.y1 += this.velY;
+            this.velY = (this.velY < physics.maxGravityOnObject) ? this.velY + physics.gravity : physics.maxGravityOnObject;
+            this.configYs();
+        }
         
-        this.clockC ++;
-        if (this.clockC >= this.clockM) {
-            this.clockC = 0;
-            
+        collidelib.block_to_map(this);
+        
+        
+        if (this.isFalling) {// if falling
             var changed = false;
             if (floor(this.centerX) !== this.inRow) {
                 if (floor(this.centerY) !== this.inColumn) {
@@ -594,11 +721,54 @@ var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, vel
                 /* Remove from bMap (if you're the last of blocks[this.blockIndex]) */
                 if (blocks[this.blockIndex].length === 0) {
                     bMap[this.bMapIndex] = 0;
-                    ///wii hmm
+                    toBeRecycledBMapIndices.push(this.blockIndex);///wait don't do this if the block won't die
+                }
+                
+                /* Add to bMap and blocks */
+                this.bMapIndex = this.inRow+mapColumns*this.inColumn;
+                if (bMap[this.bMapIndex] === 0) {
+                    /* Location does not exist, create new one */
+                    if (toBeRecycledBMapIndices.length !== 0) {
+                        this.blockIndex = toBeRecycledBMapIndices.splice(0, 1)[0];// .splice returns an array of deleted items, even if I delete 1 item
+                        bMap[this.bMapIndex] = this.blockIndex;
+                        blocks[this.blockIndex] = [this];
+                    } else {
+                        this.blockIndex = blocks.length;
+                        bMap[this.bMapIndex] = this.blockIndex;
+                        blocks.push([this]);
+                    }
+                    this.blockIndexIndex = 0;
+                } else {
+                    /* Location does exist, push to array */
+                    this.blockIndex = bMap[this.bMapIndex];
+                    blocks[this.blockIndex].push(this);
+                    this.blockIndexIndex = blocks[this.blockIndex].length-1;
                 }
             }
             
+        } else {// if not falling
+            /* Remove from blocks */
+            for (var bii = this.blockIndexIndex+1; bii < blocks[this.blockIndex].length; bii ++) {
+                blocks[this.blockIndex][bii].blockIndexIndex --;// push backwards index
+            }
+            blocks[this.blockIndex].splice(this.blockIndexIndex, 1);//remove from blocks
+            
+            /* Remove from bMap (if you're the last of blocks[this.blockIndex]) */
+            if (blocks[this.blockIndex].length === 0) {
+                bMap[this.bMapIndex] = 0;
+                toBeRecycledBMapIndices.push(this.blockIndex);///wait don't do this if the block won't die
+            }
+            
+            /* Add to tMap */
+            this.inRow = floor(this.centerX);
+            this.inColumn = floor(this.centerY);
+            while (tMap[this.inRow+mapColumns*this.inColumn]) {
+                
+                this.inColumn --;
+            }
+            tMap[this.inRow+mapColumns*this.inColumn] = this.id256;
         }
+        
         
         
         
@@ -614,10 +784,10 @@ var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, vel
 
 /** Create instances **/
 var framework = new Framework();
-var player = new Player(mapRows/2, mapColumns/2, 0.2, 0.2);
+var player = new Player(mapColumns/2, 2, 0.8, 0.8);
 generateMap();
 
-mapConnectionsScan();
+///mapConnectionsScan();
 
 /** Built-in functions **/
 mouseScrolled = function () {// Got great feedback from KWC@MKaelin368 to improve the scrolling method
@@ -655,6 +825,12 @@ keyPressed = function() {
     down_keys[keyCode] = true;
     framework.onKeyDown(keyCode);
     //player.onKeyDown(keyCode);
+    
+    
+    ///
+    if (key.toString() === "s") {
+        mapConnectionsScan();
+    }
 };
 
 keyReleased = function() {
@@ -667,7 +843,7 @@ draw = function() {
         case 0: // main game
             cameraUpdate();
             
-            background(255);
+            background(0);
             
             drawTiles();
             drawBlocks();
@@ -686,4 +862,22 @@ draw = function() {
     }
     framework.adjust();///change to framework.update
     framework.draw();
+    
+    /*///
+    _clearLogs();
+    for (var i = 0; i < mapRows; i ++) {
+        var s = "";
+        for (var j = 0; j < mapColumns; j ++) {
+            var ss = bMap[j+mapColumns*i].toString();
+            if (ss.length === 1) {
+                s += ss+"  ";
+            } else {
+                s +=ss+" ";
+            }
+        }
+        println(s);
+    }**/
+    ///
+    if (mouseIsPressed) {
+    tMap[floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX))]=0;}
 };
