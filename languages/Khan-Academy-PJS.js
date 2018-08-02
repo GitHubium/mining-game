@@ -5,9 +5,10 @@ noStroke();
 textAlign(CENTER, CENTER);
 rectMode(LEFT);
 imageMode(CENTER);
+noiseSeed(undefined);
 
 /** Variables **/
-var BigBlock;
+var BigBlock, mapConnectionsScan, you;
 var tMap;// stands for "tile map"
 var bMap;// stands for "block map", contains indices that point to blocks. This variable is used to determine which blocks to draw without checking if every block is on-screen
 var toBeRecycledBMapIndices = [];// if block[i].length===0, put i in this array (to be used by bMap if particle appears)
@@ -25,23 +26,24 @@ var cam = {// Camera variables
     dragForceX: 0,// Used for the smooth effect when panning around the map
     dragForceY: 0,// ^
     minHt: 0.002,// Inwards zoom limit
-    maxHt: 1,// Outwards zoom limit
+    maxHt: 0.05,// Outwards zoom limit
     hw: width/2,// hw = half width of canvas
     hh: height/2,// hh = half height of canvas
 };
 var uint8=(function(){return this.Uint8Array;})();// Allows Uint8Array on Khan Academy's editor
 var uint16=(function(){return this.Uint16Array;})();
-var mapColumns = 50;
-var mapRows = 70;
+var mapColumns = 60;
+var mapRows = 20;
 
 var mapKeyColors = [
     color(0, 0, 0), // empty
-    color(17, 0, 255),// water
-    color(138, 50, 50),// lava
-    color(34, 255, 0),// grass
-    color(122, 79, 9),// earth
-    color(219, 219, 219),// white
+    color(17, 0, 255, 100),// water
+    color	(87, 67, 30),// dirt
+    color		(130, 102, 68),// dirt-2
+    color(146,121,90),// dirt-3
+    color(118,100,77)
     ];
+var mapCaveKeyMax = 4;
 var physics = {
     gravity : 0.008,// acceleration of objects falling
     maxGravityOnObject : 0.4, // maximum fall speed of an object, because of "air friction"
@@ -95,6 +97,14 @@ var cameraUpdate = function() {
     }else if(cam.ht > cam.gotoHt*1.01){
         cam.ht -= (cam.ht-cam.gotoHt)*0.4;
     }else{cam.ht = cam.gotoHt;}
+    
+    /* Follow player logic */
+    you.cameraFollowX = you.centerX+you.velX*you.cameraTrackAheadAmount;
+    you.cameraFollowY = you.centerY+you.velY*you.cameraTrackAheadAmount;
+    cam.x += (you.cameraFollowX-cam.x)*0.1;
+    cam.y += (you.cameraFollowY-cam.y)*0.1;
+    cam.x = constrain(cam.x, cam.ht*cam.hw, mapColumns-cam.ht*cam.hw);// contrain camera to not show far sides of the map
+    cam.y = min(cam.y, (mapRows-1)-cam.ht*cam.hh);
 };
 
 var collidelib = {
@@ -107,7 +117,7 @@ var collidelib = {
         var blockBL = tMap[(roundedX-1)+mapColumns*(roundedY)];// bottom-left block
         var blockBR = tMap[(roundedX)+mapColumns*(roundedY)];// bottom-right block
         var _isFalling = true;
-         if (blockTL) {// if top-left block is solid
+         if (blockTL > 1) {// if top-left block is solid
             if (playerObj.x1 < roundedX && playerObj.y1 < roundedY) {
                 if (playerObj.x1-(roundedX-0.5) > playerObj.y1-(roundedY-0.5)) {
                     playerObj.velX = 0;
@@ -121,7 +131,7 @@ var collidelib = {
                 }
             }
         }
-        if (blockTR) {// if top-right block is solid
+        if (blockTR > 1) {// if top-right block is solid
             if (playerObj.y1 < roundedY && playerObj.x2 > roundedX) {
                 if ((roundedX+0.5)-playerObj.x2 > playerObj.y1-(roundedY-0.5)) {
                     playerObj.velX = 0;
@@ -134,7 +144,7 @@ var collidelib = {
                 }
             }
         }
-        if (blockBL) {// if bottom-left block is solid
+        if (blockBL > 1) {// if bottom-left block is solid
             if (playerObj.x1 < roundedX && playerObj.y2 > roundedY) {
                 if (playerObj.x1-(roundedX-0.5) > (roundedY+0.5)-playerObj.y2) { 
                     playerObj.velX = 0;
@@ -149,7 +159,7 @@ var collidelib = {
                 }
             }            
         }
-        if (blockBR) {// if bottom-right block is solid
+        if (blockBR > 1) {// if bottom-right block is solid
             if (playerObj.x2 > roundedX && playerObj.y2 > roundedY) {
                 if ((roundedX+0.5)-playerObj.x2 > (roundedY+0.5)-playerObj.y2) { 
                     playerObj.velX = 0;
@@ -168,7 +178,7 @@ var collidelib = {
             var blockBBX1 = tMap[floor(playerObj.x1)+mapColumns*(roundedY)];// below-left block
             var blockBBX2 = tMap[floor(playerObj.x2)+mapColumns*(roundedY)];// below-right block
             
-            if (!blockBBX1 && !blockBBX2) {
+            if (blockBBX1 < 2 && blockBBX2 < 2) {
                 playerObj.isFalling = true;
             }
         }
@@ -255,9 +265,9 @@ var generateMap = function() {
     var bArray = [];
     for (var i = 0; i < mapRows*mapColumns; i ++) {
         if (i%mapColumns===0 || i%mapColumns===mapColumns-1 || floor(i/mapColumns)===0 || floor(i/mapColumns)===mapRows-1) {
-            tArray.push(floor(random(1,4.999)));
+            tArray.push(2);
         } else {
-            tArray.push((random(0,1) > 1) ? 0 : floor(random(1,4.999)));
+            tArray.push(floor(random(2*i/mapColumns/mapRows + 2, 2*i/mapColumns/mapRows + 3)));
         }
         bArray.push(0);
     }
@@ -265,79 +275,162 @@ var generateMap = function() {
     bMap = uint16.from(bArray);
 };
 
-var mapConnectionsScan = function() {
-    var tempArray = [];
-    for (var i = 0; i < tMap.length; i ++) {
-        tempArray.push(false);
-    }
-    var infectedMap = uint8.from(tempArray);
-    
-    infectedMap[tMap.length-1] = 1;
-    var endpoints = [tMap.length-1];
-
-    var maxTimes = 200;
-    var times = 0;
-    while (endpoints.length !== 0) {// infect solid tiles
-        for (var i = endpoints.length-1; i >= 0; i --) {
-            if (endpoints[i]%mapColumns !== 0) {
-                var indexLeft = endpoints[i]-1;
-                if (tMap[indexLeft] && !infectedMap[indexLeft]) {
-                    infectedMap[indexLeft] = true;
-                    endpoints.push(indexLeft);
-                }
-    
-            } if (endpoints[i]%mapColumns !== mapColumns-1) {
-                var indexRight = endpoints[i]+1;
-                if (tMap[indexRight] && !infectedMap[indexRight]) {
-                    infectedMap[indexRight] = true;
-                    endpoints.push(indexRight);
-                }
-            }
-            if (endpoints[i] >= mapColumns) {
-                var indexUp = endpoints[i]-mapColumns;
-                if (tMap[indexUp] && !infectedMap[indexUp]) {
-                    infectedMap[indexUp] = true;
-                    endpoints.push(indexUp);
-                }
-            } 
-            if (endpoints[i] < tMap.length-mapColumns) {
-                var indexDown = endpoints[i]+mapColumns;
-                if (tMap[indexDown] && !infectedMap[indexDown]) {
-                    infectedMap[indexDown] = true;
-                    endpoints.push(indexDown);
-                }
-            }
-            endpoints.splice(i, 1);
+var addDeepLayersLogic = function() {
+    if (you.y1 > tMap.length/mapColumns - 18) {///
+        var tArray = Array.from(tMap);
+        var bArray = Array.from(bMap);
+        
+        /* Add 5 solid bottom rows */
+        for (var i = mapRows*mapColumns; i < (mapRows+5)*mapColumns; i ++) {
+            tArray.push(2);
+            bArray.push(0);
         }
-        times ++;
-        if (times > maxTimes) {
-            break;
-        }
-    }
-    
-    //non-infected tiles turned into particles
-    var bMapOnIndex = blocks.length;
-    for (var i = 0; i < tMap.length; i ++) {
-        if (tMap[i]) {
-            if (!infectedMap[i]) {
-                
-                bMap[i] = bMapOnIndex;
-                blocks.push( [new BigBlock(i%mapColumns, floor(i/mapColumns), tMap[i], i, bMapOnIndex, 0, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity))] );
-                //                                                                id256, bMapIndex, blockIndex, blockIndexIndex
-                tMap[i] = 0;
-                bMapOnIndex ++;
+        mapRows += 5;
+        tMap = uint8.from(tArray);
+        bMap = uint16.from(bArray);   
+        
+        /* Modify 2nd to bottom row */
+        var noiseScale = 0.03;
+        for (var i = (mapRows-6)*mapColumns; i < (mapRows-1)*mapColumns; i ++) {
+            if (i%mapColumns===0 || i%mapColumns===mapColumns-1) {
+                tMap[i] = 2;
             } else {
+                //if (random(0,1) < 0.6) {
+                if (mapRows < 100) { 
+                var val = noise( (i%mapColumns)*noiseScale , (i/mapColumns)*noiseScale);
 
+                tMap[i] = constrain(floor(map(val, 0.40, 0.47, 0, mapCaveKeyMax)), 0, mapCaveKeyMax);
+                } else {
+                     tMap[i] = mapCaveKeyMax+1;
+                }
             }
         }
     }
 };
 
+var removeBlock = function(tMapRemovedIndex) {
+    if (tMapRemovedIndex !== undefined) {
+        if (tMap[tMapRemovedIndex] === 0) {
+            return;
+        }
+        /* Create block */
+        if (bMap[tMapRemovedIndex] === 0) {
+            /* Location does not exist, create new one */
+            if (toBeRecycledBMapIndices.length !== 0) {
+                var blockIndex = toBeRecycledBMapIndices.splice(0, 1)[0];// .splice returns an array of deleted items, even if I delete 1 item
+                bMap[tMapRemovedIndex] = blockIndex;
+                blocks[blockIndex] = [new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, 0, 0)];
+                //                                                                id256, bMapIndex, blockIndex, blockIndexIndex];
+            } else {
+                var blockIndex = blocks.length;
+                bMap[tMapRemovedIndex] = blockIndex;
+                blocks.push([new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, 0, 0)]);
+            }
+        } else {
+            /* Location does exist, push to array */
+            var blockIndex = bMap[tMapRemovedIndex];
+            blocks[blockIndex].push(new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, blocks[blockIndex].length-1, 0));
+        }
+        
+        /* Remove tMap */
+        tMap[tMapRemovedIndex] = 0;
+    }
+};
+
+var mapConnectionsLogic = function() {
+    if (frameCount%30 === 0) {
+
+        var tempArray = [];
+        for (var i = 0; i < tMap.length; i ++) {
+            tempArray.push(false);
+        }
+        var infectedMap = uint8.from(tempArray);
+        
+        infectedMap[tMap.length-1] = 1;
+        var endpoints = [tMap.length-1];
+    
+        var maxTimes = 200;
+        var times = 0;
+        while (endpoints.length !== 0) {// infect solid tiles
+            for (var i = endpoints.length-1; i >= 0; i --) {
+                if (endpoints[i]%mapColumns !== 0) {
+                    var indexLeft = endpoints[i]-1;
+                    if (tMap[indexLeft] && !infectedMap[indexLeft]) {
+                        infectedMap[indexLeft] = true;
+                        endpoints.push(indexLeft);
+                    }
+        
+                } if (endpoints[i]%mapColumns !== mapColumns-1) {
+                    var indexRight = endpoints[i]+1;
+                    if (tMap[indexRight] && !infectedMap[indexRight]) {
+                        infectedMap[indexRight] = true;
+                        endpoints.push(indexRight);
+                    }
+                }
+                if (endpoints[i] >= mapColumns) {
+                    var indexUp = endpoints[i]-mapColumns;
+                    if (tMap[indexUp] && !infectedMap[indexUp]) {
+                        infectedMap[indexUp] = true;
+                        endpoints.push(indexUp);
+                    }
+                } 
+                if (endpoints[i] < tMap.length-mapColumns) {
+                    var indexDown = endpoints[i]+mapColumns;
+                    if (tMap[indexDown] && !infectedMap[indexDown]) {
+                        infectedMap[indexDown] = true;
+                        endpoints.push(indexDown);
+                    }
+                }
+                endpoints.splice(i, 1);
+            }
+            times ++;
+            if (times > maxTimes) {
+                break;
+            }
+        }
+        
+        //non-infected tiles turned into BigBlocks
+        var bMapOnIndex = blocks.length;
+        for (var i = 0; i < tMap.length; i ++) {
+            if (tMap[i]) {
+                if (!infectedMap[i]) {
+                    bMap[i] = bMapOnIndex;
+                    blocks.push( [new BigBlock(i%mapColumns, floor(i/mapColumns), tMap[i], i, bMapOnIndex, 0, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity))] );
+                    //                                                                id256, bMapIndex, blockIndex, blockIndexIndex
+                    tMap[i] = 0;
+                    bMapOnIndex ++;
+                } else {
+    
+                }
+            }
+        }
+        
+        /* Water flow logic */
+        for (var i = tMap.length+1; i > -1 ; i --) {
+            if (tMap[i] === 1 && tMap[i+mapColumns] === 0) {// if block below this is empty
+                tMap[i] = tMap[i+mapColumns];
+                tMap[i+mapColumns] = 1;
+            } else if (tMap[i] === 1 && tMap[i+mapColumns-1] === 0) {// if block below-left this is empty
+                tMap[i] = tMap[i+mapColumns-1];
+                tMap[i+mapColumns-1] = 1;
+            } else if (tMap[i] === 1 && tMap[i+mapColumns+1] === 0) {// if block below-right this is empty
+                tMap[i] = tMap[i+mapColumns+1];
+                tMap[i+mapColumns+1] = 1;
+            }
+        
+        }
+    }
+};
+
 var drawTiles = function() {
+    var id256;
     for (var layer = max(0, floor(RevY(0))); layer < min(floor(RevY(height))+1, mapRows); layer ++) {
         for (var col = max(0, floor(RevX(0))); col < min(floor(RevX(width ))+1, mapColumns); col ++) {
-            fill(mapKeyColors[tMap[layer*mapColumns+col]]);
-            rect(X(col), Y(layer), S(1)+0.5, S(1)+0.5);
+            id256 = tMap[layer*mapColumns+col];
+            if (id256) {
+                fill(mapKeyColors[id256]);
+                rect(X(col), Y(layer), S(1)+0.5, S(1)+0.5);
+            }
         }
     }
 };
@@ -445,6 +538,7 @@ var Framework = function() {
         this.draw();
     };
 };
+
 var Player = function(x, y, w, h) {
     this.x1 = x;
     this.y1 = y;
@@ -530,13 +624,61 @@ var Player = function(x, y, w, h) {
         }
         
         /* Make camera follow player (looks much better if placed after graphics) */
-        this.cameraFollowX = this.centerX+this.velX*this.cameraTrackAheadAmount;
-        this.cameraFollowY = this.centerY+this.velY*this.cameraTrackAheadAmount;
-        cam.x += (this.cameraFollowX-cam.x)*0.1;
-        cam.y += (this.cameraFollowY-cam.y)*0.1;
+
         //cam.x=this.centerX;cam.y=this.centerY;
     };
     
+};
+
+var PlayerTool = function(type) {
+    this.type = type;
+    
+    this.onMouseDown = function() {
+        if (this.type === "hit") {
+            removeBlock(floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX)));
+        } else if (this.type === "vacuum") {
+            tMap[floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX))] = 0;
+        } else {
+            println("Not supported tool type \""+this.type+"\"");
+        }
+    };
+
+    this.update = function() {
+        var coorX = floor(RevX(mouseX));
+        var coorY = floor(RevY(mouseY));
+        if (tMap[coorY*mapColumns+coorX]) {
+            noFill();
+            stroke(255);
+            strokeWeight(3);
+            rect(X(coorX),Y(coorY),S(1),S(1));
+            noStroke();
+        }
+    };
+};
+
+var MiniMap = function() {
+    this.show = true;
+    
+    this.startX = 20;
+    this.startY = 20;
+    
+    this.onKeyDown = function(theKey) {
+        if (theKey.toString() === "m") {
+            this.show = !this.show;
+        }
+    };
+    
+    this.update = function() {
+        if (this.show) {
+            fill(30);
+            rect(0, 0, mapColumns+40, mapRows+40);
+            for (var i = 0; i < mapColumns; i ++) {
+                for (var j = 0; j < mapRows; j ++) {
+                    set(this.startX+i, this.startY+j, mapKeyColors[tMap[i+j*mapColumns]]);
+                }
+            }
+        }
+    };
 };
 
 var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, velX, velY) {// velX and velY are optional parameters
@@ -662,12 +804,16 @@ var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, vel
 
 /** Create instances **/
 var framework = new Framework();
-var player = new Player(mapColumns/2-0.5, -2, 0.5, 0.5);
+var you = new Player(mapColumns/2-0.5, -2, 0.5, 0.5);
+var ax = new PlayerTool("vacuum");
+var miniMap = new MiniMap();
 generateMap();
-//mapConnectionsScan(); 
-
 
 /** Built-in functions **/
+mousePressed = function() {
+    ax.onMouseDown();
+};
+
 mouseScrolled = function () {// Got great feedback from KWC@MKaelin368 to improve the scrolling method
     try {
         var evt = mouseScrolled.caller.arguments[0];
@@ -702,6 +848,7 @@ mouseScrolled = function () {// Got great feedback from KWC@MKaelin368 to improv
 keyPressed = function() {
     down_keys[keyCode] = true;
     framework.onKeyDown(keyCode);
+    miniMap.onKeyDown(key);
 
     if (key.toString() === "s") {
         mapConnectionsScan();
@@ -710,7 +857,6 @@ keyPressed = function() {
 
 keyReleased = function() {
     down_keys[keyCode] = false;
-    //player.onKeyUp(keyCode);
 };
 
 draw = function() {
@@ -720,10 +866,17 @@ draw = function() {
             
             background(0);
             
+            you.update();
+            ax.update();
+            
             drawTiles();
             drawBlocks();
             
-            player.update();
+            ax.update();
+            miniMap.update();
+            
+            mapConnectionsLogic();
+            addDeepLayersLogic();
             break;
             
         case 1: // menu
@@ -734,22 +887,4 @@ draw = function() {
             println("Scene "+scene+" does not exist!");
     }
     framework.update();// frame rate adjuster
-    
-    /** Temporary stuff for debugging **/
-    /*///
-    _clearLogs();
-    for (var i = 0; i < mapRows; i ++) {
-        var s = "";
-        for (var j = 0; j < mapColumns; j ++) {
-            var ss = bMap[j+mapColumns*i].toString();
-            if (ss.length === 1) {
-                s += ss+"  ";
-            } else {
-                s +=ss+" ";
-            }
-        }
-        println(s);
-    }**/
-    if (mouseIsPressed) {
-    tMap[floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX))]=0;}///
 };
