@@ -32,7 +32,7 @@ var cam = {// Camera variables
 };
 var uint8=(function(){return this.Uint8Array;})();// Allows Uint8Array on Khan Academy's editor
 var uint16=(function(){return this.Uint16Array;})();
-var mapColumns = 60;
+var mapColumns = 100;
 var mapRows = 20;
 
 var mapKeyColors = [
@@ -43,6 +43,12 @@ var mapKeyColors = [
     color(146,121,90),// dirt-3
     color(118,100,77)
     ];
+var miniMapKeyColors = [];
+for (var i = 0; i < mapKeyColors.length; i ++) {
+    var mkci = mapKeyColors[i];
+    
+    miniMapKeyColors.push(lerpColor(color(0), color(red(mkci), green(mkci), blue(mkci)), map(alpha(mkci), 0, 255, 0, 1)));
+}
 var mapCaveKeyMax = 4;
 var physics = {
     gravity : 0.008,// acceleration of objects falling
@@ -308,118 +314,270 @@ var addDeepLayersLogic = function() {
     }
 };
 
-var removeBlock = function(tMapRemovedIndex) {
-    if (tMapRemovedIndex !== undefined) {
-        if (tMap[tMapRemovedIndex] === 0) {
-            return;
-        }
-        /* Create block */
-        if (bMap[tMapRemovedIndex] === 0) {
-            /* Location does not exist, create new one */
-            if (toBeRecycledBMapIndices.length !== 0) {
-                var blockIndex = toBeRecycledBMapIndices.splice(0, 1)[0];// .splice returns an array of deleted items, even if I delete 1 item
-                bMap[tMapRemovedIndex] = blockIndex;
-                blocks[blockIndex] = [new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, 0, 0)];
-                //                                                                id256, bMapIndex, blockIndex, blockIndexIndex];
-            } else {
-                var blockIndex = blocks.length;
-                bMap[tMapRemovedIndex] = blockIndex;
-                blocks.push([new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, 0, 0)]);
-            }
+var convertTileToBlock = function(tMapRemovedIndex) {
+    /* Create block */
+    if (bMap[tMapRemovedIndex] === 0) {
+        /* Location does not exist, create new one */
+        if (toBeRecycledBMapIndices.length !== 0) {
+            var blockIndex = toBeRecycledBMapIndices.splice(0, 1)[0];// .splice returns an array of deleted items, even if I delete 1 item
+            bMap[tMapRemovedIndex] = blockIndex;
+            blocks[blockIndex] = [new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, 0, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity))];
+            //                                                                id256, bMapIndex, blockIndex, blockIndexIndex];
         } else {
-            /* Location does exist, push to array */
-            var blockIndex = bMap[tMapRemovedIndex];
-            blocks[blockIndex].push(new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, blocks[blockIndex].length-1, 0));
+            var blockIndex = blocks.length;
+            bMap[tMapRemovedIndex] = blockIndex;
+            blocks.push([new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, 0, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity))]);
         }
-        
-        /* Remove tMap */
-        tMap[tMapRemovedIndex] = 0;
+    } else {
+        /* Location does exist, push to array */
+        var blockIndex = bMap[tMapRemovedIndex];
+        blocks[blockIndex].push(new BigBlock(tMapRemovedIndex%mapColumns, floor(tMapRemovedIndex/mapColumns), tMap[tMapRemovedIndex], tMapRemovedIndex, blockIndex, blocks[blockIndex].length-1, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity)));
+    }
+    tMap[tMapRemovedIndex] = 0;
+};
+
+var indexOfAbsMax = function(arr) {
+    if (arr.length === 0) {
+        return -1;
+    }
+    var max = abs(arr[0]);
+    var maxIndex = 0;
+    for (var i = 1; i < arr.length; i++) {
+        var absarri = abs(arr[i]);
+        if (absarri > max) {
+            maxIndex = i;
+            max = absarri;
+        }
+    }
+    return maxIndex;
+};
+
+var specificIslandScan = function(blockIndex) {
+    if (tMap[blockIndex] === 0) {
+        return;
+    }
+    var tempX = blockIndex%mapColumns;
+    if (tempX === 0 || tempX === mapColumns-1) {
+        return;
+    }
+    var tempY = floor(blockIndex/mapColumns);
+    if (tempY < 0) {
+        return;
+    }
+    var nodeCoors = [tempX, tempY];//x, y,, x, y,, x, y,,...
+    var nodeIndices = [blockIndex];//index,, index,, index,,
+    var allIndices = [blockIndex];
+    var nodeDists = [ (tempX)-mapColumns/2+0.1 ];//dist,, dist,, dist,,... // higher is better
+    var nodeBranchRots = [ true, true, true, true ];// right, down, left, up,, right, down, left, up,, right, down, left, up,,...
+    
+    var pathway = [];//rot,, rot,, rot,,... // direction from one node to the next
+    // I'm using 1D instead of 2D arrays whenever I can 
+    
+    var RIGHT_dist, LEFT_dist, UP_dist, DOWN_dist, willIndexR, willIndexU, willIndexD, willIndexL, lastIndex;
+    var done = false;
+    var isPath = true;
+    var times = 0;
+    var maxTimes = 1000;// low = small floating islands allowed, big = only large floating islands
+    while (!done) {
+        RIGHT_dist = 0;
+        LEFT_dist = 0;
+        UP_dist = 0;
+        DOWN_dist = 0;
+        lastIndex = nodeDists.length-1;
+
+        if (nodeBranchRots[lastIndex*4+0]) {
+            willIndexR = nodeIndices[lastIndex]+1;
+            if (tMap[willIndexR] && !allIndices.includes(willIndexR)) {//if grass
+                RIGHT_dist = nodeDists[lastIndex] + 1;
+            } else {
+                nodeBranchRots[lastIndex*4+0] = false;
+            }
+        }
+        if (nodeBranchRots[lastIndex*4+1]) {
+            willIndexD = nodeIndices[lastIndex]+mapColumns;
+            if (tMap[willIndexD] && !allIndices.includes(willIndexD)) {//if grass
+                DOWN_dist = nodeDists[lastIndex];
+            } else {
+                nodeBranchRots[lastIndex*4+1] = false;
+            }
+        }
+        if (nodeBranchRots[lastIndex*4+3]) {
+            willIndexU = nodeIndices[lastIndex]-mapColumns;
+            if (tMap[willIndexU] && !allIndices.includes(willIndexU)) {//if grass
+                UP_dist = nodeDists[lastIndex];
+            } else {
+                nodeBranchRots[lastIndex*4+3] = false;
+            }
+            
+        }
+        if (nodeBranchRots[lastIndex*4+2]) {
+            willIndexL = nodeIndices[lastIndex]-1;
+            if (tMap[willIndexL] && !allIndices.includes(willIndexL)) {//if grass
+                LEFT_dist = nodeDists[lastIndex] - 1;
+            } else {
+                nodeBranchRots[lastIndex*4+2] = false;
+            }
+        }
+
+        var bestOption = indexOfAbsMax( [0, RIGHT_dist, DOWN_dist, LEFT_dist, UP_dist ] );
+        switch (bestOption) {
+            case 0:
+                if (lastIndex === 0) {
+                    isPath = false;
+                    done = true;
+                } else {
+                    nodeCoors.splice(lastIndex*2, 2);
+                    nodeDists.pop();
+                    nodeIndices.pop();
+                    nodeBranchRots.splice(lastIndex*4, 4);
+                    nodeBranchRots[(lastIndex-1)*4+pathway[pathway.length-1]] = false;
+                    pathway.pop();
+                }
+                break;
+            case 1:
+                var x = nodeCoors[lastIndex*2]+1;
+                if (x === mapColumns-1) {
+                    done = true;
+                    break;
+                }
+                var y = nodeCoors[lastIndex*2+1];
+                nodeCoors.push(x, y);
+                nodeIndices.push(willIndexR);
+                allIndices.push(willIndexR);
+                nodeDists.push(RIGHT_dist);
+                nodeBranchRots.push(true,true,true,true);
+                pathway.push(0);
+                break;
+            case 2:
+                var x = nodeCoors[lastIndex*2];
+                var y = nodeCoors[lastIndex*2+1]+1;
+                nodeCoors.push(x, y);
+                nodeIndices.push(willIndexD);
+                allIndices.push(willIndexD);
+                nodeDists.push(DOWN_dist);
+                nodeBranchRots.push(true,true,true,true);
+                pathway.push(1);
+                break;
+            case 3:
+                var x = nodeCoors[lastIndex*2]-1;
+                if (x === 0) {
+                    done = true;
+                    break;
+                }
+                var y = nodeCoors[lastIndex*2+1];
+                nodeCoors.push(x, y);
+                nodeIndices.push(willIndexL);
+                allIndices.push(willIndexL);
+                nodeDists.push(LEFT_dist);
+                nodeBranchRots.push(true,true,true,true);
+                pathway.push(2);
+                break;
+            case 4:
+                var x = nodeCoors[lastIndex*2];
+                var y = nodeCoors[lastIndex*2+1]-1;
+                nodeCoors.push(x, y);
+                nodeIndices.push(willIndexU);
+                allIndices.push(willIndexU);
+                nodeDists.push(UP_dist);
+                nodeBranchRots.push(true,true,true,true);
+                pathway.push(3);
+                break;
+        }
+        if (++ times > maxTimes) {
+            println("Maximum iteration reached");
+            done = true;
+        }
+    }
+    if (!isPath) {
+        for (var i = 0; i < allIndices.length; i ++) {
+            convertTileToBlock(allIndices[i]);
+            
+        }
     }
 };
 
-var mapConnectionsLogic = function() {
-    if (frameCount%30 === 0) {
 
-        var tempArray = [];
-        for (var i = 0; i < tMap.length; i ++) {
-            tempArray.push(false);
-        }
-        var infectedMap = uint8.from(tempArray);
-        
-        infectedMap[tMap.length-1] = 1;
-        var endpoints = [tMap.length-1];
+var mapConnectionsScan = function() {
+    var tempArray = [];
+    for (var i = 0; i < tMap.length; i ++) {
+        tempArray.push(false);
+    }
+    var infectedMap = uint8.from(tempArray);
     
-        var maxTimes = 200;
-        var times = 0;
-        while (endpoints.length !== 0) {// infect solid tiles
-            for (var i = endpoints.length-1; i >= 0; i --) {
-                if (endpoints[i]%mapColumns !== 0) {
-                    var indexLeft = endpoints[i]-1;
-                    if (tMap[indexLeft] && !infectedMap[indexLeft]) {
-                        infectedMap[indexLeft] = true;
-                        endpoints.push(indexLeft);
-                    }
-        
-                } if (endpoints[i]%mapColumns !== mapColumns-1) {
-                    var indexRight = endpoints[i]+1;
-                    if (tMap[indexRight] && !infectedMap[indexRight]) {
-                        infectedMap[indexRight] = true;
-                        endpoints.push(indexRight);
-                    }
+    infectedMap[tMap.length-1] = 1;
+    var endpoints = [tMap.length-1];
+
+    var maxTimes = 200;
+    var times = 0;
+    while (endpoints.length !== 0) {// infect solid tiles
+        for (var i = endpoints.length-1; i >= 0; i --) {
+            if (endpoints[i]%mapColumns !== 0) {
+                var indexLeft = endpoints[i]-1;
+                if (tMap[indexLeft] && !infectedMap[indexLeft]) {
+                    infectedMap[indexLeft] = true;
+                    endpoints.push(indexLeft);
                 }
-                if (endpoints[i] >= mapColumns) {
-                    var indexUp = endpoints[i]-mapColumns;
-                    if (tMap[indexUp] && !infectedMap[indexUp]) {
-                        infectedMap[indexUp] = true;
-                        endpoints.push(indexUp);
-                    }
-                } 
-                if (endpoints[i] < tMap.length-mapColumns) {
-                    var indexDown = endpoints[i]+mapColumns;
-                    if (tMap[indexDown] && !infectedMap[indexDown]) {
-                        infectedMap[indexDown] = true;
-                        endpoints.push(indexDown);
-                    }
-                }
-                endpoints.splice(i, 1);
-            }
-            times ++;
-            if (times > maxTimes) {
-                break;
-            }
-        }
-        
-        //non-infected tiles turned into BigBlocks
-        var bMapOnIndex = blocks.length;
-        for (var i = 0; i < tMap.length; i ++) {
-            if (tMap[i]) {
-                if (!infectedMap[i]) {
-                    bMap[i] = bMapOnIndex;
-                    blocks.push( [new BigBlock(i%mapColumns, floor(i/mapColumns), tMap[i], i, bMapOnIndex, 0, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity))] );
-                    //                                                                id256, bMapIndex, blockIndex, blockIndexIndex
-                    tMap[i] = 0;
-                    bMapOnIndex ++;
-                } else {
     
+            } if (endpoints[i]%mapColumns !== mapColumns-1) {
+                var indexRight = endpoints[i]+1;
+                if (tMap[indexRight] && !infectedMap[indexRight]) {
+                    infectedMap[indexRight] = true;
+                    endpoints.push(indexRight);
                 }
             }
-        }
-        
-        /* Water flow logic */
-        for (var i = tMap.length+1; i > -1 ; i --) {
-            if (tMap[i] === 1 && tMap[i+mapColumns] === 0) {// if block below this is empty
-                tMap[i] = tMap[i+mapColumns];
-                tMap[i+mapColumns] = 1;
-            } else if (tMap[i] === 1 && tMap[i+mapColumns-1] === 0) {// if block below-left this is empty
-                tMap[i] = tMap[i+mapColumns-1];
-                tMap[i+mapColumns-1] = 1;
-            } else if (tMap[i] === 1 && tMap[i+mapColumns+1] === 0) {// if block below-right this is empty
-                tMap[i] = tMap[i+mapColumns+1];
-                tMap[i+mapColumns+1] = 1;
+            if (endpoints[i] >= mapColumns) {
+                var indexUp = endpoints[i]-mapColumns;
+                if (tMap[indexUp] && !infectedMap[indexUp]) {
+                    infectedMap[indexUp] = true;
+                    endpoints.push(indexUp);
+                }
+            } 
+            if (endpoints[i] < tMap.length-mapColumns) {
+                var indexDown = endpoints[i]+mapColumns;
+                if (tMap[indexDown] && !infectedMap[indexDown]) {
+                    infectedMap[indexDown] = true;
+                    endpoints.push(indexDown);
+                }
             }
-        
+            endpoints.splice(i, 1);
+        }
+        times ++;
+        if (times > maxTimes) {
+            break;
         }
     }
+    
+    //non-infected tiles turned into BigBlocks
+    var bMapOnIndex = blocks.length;
+    for (var i = 0; i < tMap.length; i ++) {
+        if (tMap[i]) {
+            if (!infectedMap[i]) {
+                bMap[i] = bMapOnIndex;
+                blocks.push( [new BigBlock(i%mapColumns, floor(i/mapColumns), tMap[i], i, bMapOnIndex, 0, random(-physics.bigBlockXVelocity, physics.bigBlockXVelocity))] );
+                //                                                                id256, bMapIndex, blockIndex, blockIndexIndex
+                tMap[i] = 0;
+                bMapOnIndex ++;
+            } else {
+
+            }
+        }
+    }
+    
+    /* Water flow logic */
+    for (var i = tMap.length+1; i > -1 ; i --) {
+        if (tMap[i] === 1 && tMap[i+mapColumns] === 0) {// if block below this is empty
+            tMap[i] = tMap[i+mapColumns];
+            tMap[i+mapColumns] = 1;
+        } else if (tMap[i] === 1 && tMap[i+mapColumns-1] === 0) {// if block below-left this is empty
+            tMap[i] = tMap[i+mapColumns-1];
+            tMap[i+mapColumns-1] = 1;
+        } else if (tMap[i] === 1 && tMap[i+mapColumns+1] === 0) {// if block below-right this is empty
+            tMap[i] = tMap[i+mapColumns+1];
+            tMap[i+mapColumns+1] = 1;
+        }
+    
+    }
+    
 };
 
 var drawTiles = function() {
@@ -635,9 +793,24 @@ var PlayerTool = function(type) {
     
     this.onMouseDown = function() {
         if (this.type === "hit") {
-            removeBlock(floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX)));
+            var index = floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX));///make RevMouseX a global var
+            
+            convertTileToBlock(index);
+            
+            specificIslandScan(index-1);
+            specificIslandScan(index+1);
+            specificIslandScan(index-mapColumns);
+            specificIslandScan(index+mapColumns);
+
         } else if (this.type === "vacuum") {
-            tMap[floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX))] = 0;
+            var index = floor(RevY(mouseY))*mapColumns+floor(RevX(mouseX));
+            tMap[index] = 0;
+            
+            specificIslandScan(index-1);
+            specificIslandScan(index+1);
+            specificIslandScan(index-mapColumns);
+            specificIslandScan(index+mapColumns);
+            
         } else {
             println("Not supported tool type \""+this.type+"\"");
         }
@@ -674,7 +847,7 @@ var MiniMap = function() {
             rect(0, 0, mapColumns+40, mapRows+40);
             for (var i = 0; i < mapColumns; i ++) {
                 for (var j = 0; j < mapRows; j ++) {
-                    set(this.startX+i, this.startY+j, mapKeyColors[tMap[i+j*mapColumns]]);
+                    set(this.startX+i, this.startY+j, miniMapKeyColors[tMap[i+j*mapColumns]]);
                 }
             }
         }
@@ -808,6 +981,7 @@ var you = new Player(mapColumns/2-0.5, -2, 0.5, 0.5);
 var ax = new PlayerTool("vacuum");
 var miniMap = new MiniMap();
 generateMap();
+mapConnectionsScan();
 
 /** Built-in functions **/
 mousePressed = function() {
@@ -875,7 +1049,7 @@ draw = function() {
             ax.update();
             miniMap.update();
             
-            mapConnectionsLogic();
+            
             addDeepLayersLogic();
             break;
             
