@@ -351,7 +351,6 @@ var indexOfAbsMax = function(arr) {
     }
     return maxIndex;
 };
-
 var specificIslandScan = function(blockIndex) {
     if (tMap[blockIndex] === 0) {
         return;
@@ -496,7 +495,6 @@ var specificIslandScan = function(blockIndex) {
     }
 };
 
-
 var mapConnectionsScan = function() {
     var tempArray = [];
     for (var i = 0; i < tMap.length; i ++) {
@@ -599,8 +597,17 @@ var drawBlocks = function() {
             var id65536 = bMap[layer*mapColumns+col];
             if (id65536 !== 0) {
                 for (var bi = 0; bi < blocks[id65536].length; bi ++) {
-                    blocks[id65536][bi].update();
+                    blocks[id65536][bi].draw();
                 }
+            }
+        }
+    }
+};
+var updateBlocks = function() {
+    for (var b = 0; b < blocks.length; b ++) {
+        if (blocks[b] !== null) {
+            for (var bi = 0; bi < blocks[b].length; bi ++) {
+                blocks[b][bi].update();
             }
         }
     }
@@ -964,7 +971,6 @@ var BigBlock = function(x, y, id256, bMapIndex, blockIndex, blockIndexIndex, vel
             }
             tMap[this.inRow+mapColumns*this.inColumn] = this.id256;
         }
-        this.draw();///temporary?
     };
     
     this.draw = function() {
@@ -1041,14 +1047,13 @@ draw = function() {
             background(0);
             
             you.update();
-            ax.update();
+            updateBlocks();
             
             drawTiles();
             drawBlocks();
             
             ax.update();
             miniMap.update();
-            
             
             addDeepLayersLogic();
             break;
